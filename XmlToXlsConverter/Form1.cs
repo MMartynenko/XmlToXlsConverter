@@ -11,6 +11,7 @@ using System.Data;
 using System.Runtime.InteropServices;
 using Microsoft.Office.Interop.Excel;
 using System.IO;
+using System.Xml;
 
 namespace XmlToXlsConverter
 {
@@ -36,7 +37,7 @@ namespace XmlToXlsConverter
                 if (File.Exists(txtXmlFilePath.Text))
                 {
                     string CustXmlFilePath = Path.Combine(new FileInfo(txtXmlFilePath.Text).DirectoryName, txtCustomFileName.Text); // Ceating Path for Xml Files  
-                    System.Data.DataTable dt = CreateDataTableFromXml(txtXmlFilePath.Text);
+                    XmlNodeList dt = CreateDataTableFromXml(txtXmlFilePath.Text);
                     ExportDataTableToExcel(dt, CustXmlFilePath);
 
                     MessageBox.Show("Conversion completed");
@@ -49,7 +50,7 @@ namespace XmlToXlsConverter
                 {
                     FileInfo fi = new FileInfo(txtXmlFilePath.Text);
                     string XlFile = fi.DirectoryName + "\\" + fi.Name.Replace(fi.Extension, ".xlsx");
-                    System.Data.DataTable dt = CreateDataTableFromXml(txtXmlFilePath.Text);
+                    XmlNodeList dt = CreateDataTableFromXml(txtXmlFilePath.Text);
                     ExportDataTableToExcel(dt, XlFile);
 
                     MessageBox.Show("Conversion completed");
@@ -61,25 +62,81 @@ namespace XmlToXlsConverter
             }
         }
 
-        public System.Data.DataTable CreateDataTableFromXml(string XmlFile)
-        {
-
-            System.Data.DataTable Dt = new System.Data.DataTable();
+        public XmlNodeList CreateDataTableFromXml(string XmlFile)
+        {          
+            
             try
             {
-                DataSet ds = new DataSet();
-                ds.ReadXml(XmlFile);
-                Dt.Load(ds.CreateDataReader());
+                XmlDocument doc = new XmlDocument();
+                doc.Load(XmlFile);
+                return doc.GetElementsByTagName("Worksheet");                
 
             }
             catch (Exception ex)
             {
 
             }
-            return Dt;
+            return null;
         }
 
-        private void ExportDataTableToExcel(System.Data.DataTable table, string Xlfile)
+        private void ExportDataTableToExcel(XmlNodeList table, string Xlfile)
+        {
+            Microsoft.Office.Interop.Excel.Application excel = new Microsoft.Office.Interop.Excel.Application();
+            Workbook book = excel.Application.Workbooks.Add(Type.Missing);
+            excel.Visible = false;
+            excel.DisplayAlerts = false;
+
+            for (int i = 0; i < table.Count; i++)
+            {                                              
+                Worksheet excelWorkSheet = (Microsoft.Office.Interop.Excel.Worksheet)book.ActiveSheet;
+                excelWorkSheet.Name = table[i].Attributes["ss:Name"].Value;
+
+                List<XmlNode> rows = new List<XmlNode>();
+                XmlNodeList children = table[i].FirstChild.ChildNodes;
+                foreach (XmlNode child in children)
+                {
+                    if (child.Name == "Row") rows.Add(child);
+                }
+
+                progressBar1.Maximum = rows.Count;
+                for (int j = 0; j < rows.Count; j++)
+                {
+                    XmlNode row = rows[j];
+                    int column = 1;
+                    foreach (XmlNode c in row.ChildNodes)
+                    {
+                        if (c.Name == "Cell")
+                        {
+                            if (c.Attributes["ss:Index"] != null) column = Int32.Parse(c.Attributes["ss:Index"].Value);
+                            excelWorkSheet.Cells[j + 1, column] = c.InnerText;
+                            column++;
+                            if (progressBar1.Value < progressBar1.Maximum)
+                            {
+                                progressBar1.Value++;
+                                int percent = (int)(((double)progressBar1.Value / (double)progressBar1.Maximum) * 100);
+                                progressBar1.CreateGraphics().DrawString(percent.ToString() + "%", new System.Drawing.Font("Arial", (float)8.25, FontStyle.Regular), Brushes.Black, new PointF(progressBar1.Width / 2 - 10, progressBar1.Height / 2 - 7));
+                                System.Windows.Forms.Application.DoEvents();
+                            }
+                        }
+                    }
+                }
+
+                if (i < table.Count - 1)
+                {
+                    book.Worksheets.Add();
+                }
+            }
+
+            book.SaveAs(Xlfile);
+            book.Close(true);
+            excel.Quit();
+
+            Marshal.ReleaseComObject(book);
+            Marshal.ReleaseComObject(book);
+            Marshal.ReleaseComObject(excel);
+        }
+
+        private void ExportGenericDataTableToExcel(System.Data.DataTable table, string Xlfile)
         {
 
             Microsoft.Office.Interop.Excel.Application excel = new Microsoft.Office.Interop.Excel.Application();
